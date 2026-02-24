@@ -4,7 +4,6 @@ import jax.numpy as jnp
 import optax
 from jax.sharding import Mesh, PartitionSpec, NamedSharding
 from jax.experimental import mesh_utils
-from libtpu.sdk import tpumonitoring
 
 def main():
     try:
@@ -26,7 +25,7 @@ def main():
     def loss_fn(params, x, y):
         # 通过在同一个参数上重复计算来人为增加 MXU 负载，而不增加内存占用
         h = x
-        for _ in range(200): # 循环 50 次矩阵乘法
+        for _ in range(200): # 循环 200 次矩阵乘法
             h = jax.nn.relu(jnp.dot(h, params))
         preds = jnp.mean(h, axis=1)
         return jnp.mean((preds - y)**2)
@@ -46,9 +45,9 @@ def main():
     opt_state = optimizer.init(params)
 
     if process_id == 0:
-        print(f"🚀 优化版全芯片测试：{num_devices} 核心并行...")
+        print(f"🚀 启动 JAX 训练负载：{num_devices} 核心并行...")
 
-    for step in range(100):
+    for step in range(1000): # 增加步数，使其运行更久以便观察 metrics
         step_key = jax.random.PRNGKey(step)
         # 增大 Batch Size (8192) 增加并行度
         raw_x = jax.random.normal(step_key, (8192, dim))
@@ -61,16 +60,10 @@ def main():
         start_time = time.time()
         params, opt_state = train_step(params, opt_state, data_x, data_y)
         jax.block_until_ready(params) # 强制等待 TPU 计算完成
+        dt = time.time() - start_time
         
         if process_id == 0 and (step + 1) % 5 == 0:
-            dt = time.time() - start_time
-            duty = tpumonitoring.get_metric("duty_cycle_pct").data()
-            hbm = tpumonitoring.get_metric("hbm_capacity_usage").data()
-            hbm_gb = [f"{float(v) / (1024**3):.2f}GB" for v in hbm]
-            
             print(f"Step {step+1} | 耗时: {dt:.4f}s")
-            print(f"  利用率: {duty}")
-            print(f"  HBM: {hbm_gb}")
 
 if __name__ == "__main__":
     main()

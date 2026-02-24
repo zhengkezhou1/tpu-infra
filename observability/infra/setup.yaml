@@ -12,3 +12,5 @@ setup: |
   cd ~/sky_workdir
 
   pip install jax[tpu]
+  pip install optax
+  pip install prometheus_client

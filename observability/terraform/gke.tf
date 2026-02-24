@@ -36,6 +36,17 @@ resource "google_container_cluster" "primary" {
   }
 
   remove_default_node_pool = true
+
+  # To use Managed Service for Prometheus, the legacy GKE monitoring must be disabled.
+  monitoring_service = "none"
+
+  # Enable Managed Service for Prometheus
+  monitoring_config {
+    managed_prometheus {
+      enabled = true
+    }
+  }
+
 }
 
 resource "null_resource" "configure_kubectl" {
@@ -52,7 +63,7 @@ resource "google_container_node_pool" "v6e_2x4_node_pool" {
   name           = "v6e-2x4-node-pool"
   location       = google_container_cluster.primary.location
   node_locations = var.node_locations
-  node_count     = 0
+  node_count     = 2
   node_config {
     machine_type = "ct6e-standard-4t"
     spot         = true

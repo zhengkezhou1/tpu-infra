@@ -3,6 +3,7 @@ num_nodes: 2
 run: |
   conda activate pretrain
   pip install optax
+  pip install prometheus_client
   cd ~/sky_workdir
 
   echo "=== Environment Variables ==="
@@ -10,7 +11,7 @@ run: |
   echo "============================="
 
   # Ensure SKYPILOT_NODE_IPS are newline separated for processing
-  IPS=$(echo "${SKYPILOT_NODE_IPS}" | tr ' ' '\n')
+  IPS=$(echo "${SKYPILOT_NODE_IPS}" | tr ' ' '')
   MASTER_ADDR=$(echo "${IPS}" | head -n1)
 
   export JAX_COORDINATOR_ADDRESS=${MASTER_ADDR}:8476
@@ -27,10 +28,11 @@ run: |
   unset TPU_PROCESS_PORT
 
   # Libtpu expects IP addresses WITHOUT port numbers in TPU_WORKER_HOSTNAMES
-  export TPU_WORKER_HOSTNAMES=$(echo "${IPS}" | tr '\n' ',' | sed 's/,$//')
+  export TPU_WORKER_HOSTNAMES=$(echo "${IPS}" | tr '' ',' | sed 's/,$//')
   export TPU_WORKER_ID=$SKYPILOT_NODE_RANK
 
   echo "TPU_WORKER_ID: ${TPU_WORKER_ID}"
   echo "TPU_WORKER_HOSTNAMES: ${TPU_WORKER_HOSTNAMES}"
 
-  python main.py
+  # 运行指标负载
+  python workload/metric.py
