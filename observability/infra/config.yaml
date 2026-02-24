@@ -1,5 +1,8 @@
 kubernetes:
   pod_config:
+    metadata:
+      labels:
+        app: tpu-metrics-exporter
     spec:
       tolerations:
         - key: "google.com/tpu"

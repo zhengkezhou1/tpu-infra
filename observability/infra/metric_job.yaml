@@ -34,5 +34,10 @@ run: |
   echo "TPU_WORKER_ID: ${TPU_WORKER_ID}"
   echo "TPU_WORKER_HOSTNAMES: ${TPU_WORKER_HOSTNAMES}"
 
+  # 检查并杀死任何可能正在占用 8000 端口的现有进程
+  echo "Checking for and killing existing processes on port 8000..."
+  sudo fuser -k 8000/tcp || true # '|| true' 确保即使没有进程，脚本也不会中断
+  echo "Previous processes on port 8000 killed (if any)."
+
   # 运行指标负载
   python workload/metric.py
