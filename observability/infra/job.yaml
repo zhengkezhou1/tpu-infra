@@ -1,0 +1,36 @@
+num_nodes: 2
+
+run: |
+  conda activate pretrain
+  pip install optax
+  cd ~/sky_workdir
+
+  echo "=== Environment Variables ==="
+  env | grep -E "(SKYPILOT|RAY|TPU|JAX)" | sort
+  echo "============================="
+
+  # Ensure SKYPILOT_NODE_IPS are newline separated for processing
+  IPS=$(echo "${SKYPILOT_NODE_IPS}" | tr ' ' '\n')
+  MASTER_ADDR=$(echo "${IPS}" | head -n1)
+
+  export JAX_COORDINATOR_ADDRESS=${MASTER_ADDR}:8476
+  export JAX_PROCESS_COUNT=${SKYPILOT_NUM_NODES}
+  export JAX_PROCESS_ID=${SKYPILOT_NODE_RANK}
+
+  echo "JAX_COORDINATOR_ADDRESS: ${JAX_COORDINATOR_ADDRESS}"
+  echo "JAX_PROCESS_COUNT: ${JAX_PROCESS_COUNT}"
+  echo "JAX_PROCESS_ID: ${JAX_PROCESS_ID}"
+
+  # Unset TPU_PROCESS_* variables as they can interfere with multi-host initialization
+  # forcing Libtpu to think it's a single process setup.
+  unset TPU_PROCESS_ADDRESSES
+  unset TPU_PROCESS_PORT
+
+  # Libtpu expects IP addresses WITHOUT port numbers in TPU_WORKER_HOSTNAMES
+  export TPU_WORKER_HOSTNAMES=$(echo "${IPS}" | tr '\n' ',' | sed 's/,$//')
+  export TPU_WORKER_ID=$SKYPILOT_NODE_RANK
+
+  echo "TPU_WORKER_ID: ${TPU_WORKER_ID}"
+  echo "TPU_WORKER_HOSTNAMES: ${TPU_WORKER_HOSTNAMES}"
+
+  python main.py

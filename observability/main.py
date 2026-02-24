@@ -1,120 +1,76 @@
 import time
-import re
-from prometheus_client import start_http_server, Gauge
-
+import jax
+import jax.numpy as jnp
+import optax
+from jax.sharding import Mesh, PartitionSpec, NamedSharding
+from jax.experimental import mesh_utils
 from libtpu.sdk import tpumonitoring
 
-# 简单 ID 类指标 (tensorcore_util, duty_cycle_pct, hbm_*)
-GAUGE_TC_UTIL = Gauge('libtpu_tensorcore_util', 'Percentage of TensorCore usage', ['accelerator_id'])
-GAUGE_DUTY_CYCLE = Gauge('libtpu_duty_cycle_pct', 'Accelerator active duty cycle percentage', ['accelerator_id'])
-GAUGE_HBM_TOTAL = Gauge('libtpu_hbm_capacity_total_bytes', 'Total HBM capacity in bytes', ['accelerator_id'])
-GAUGE_HBM_USAGE = Gauge('libtpu_hbm_capacity_usage_bytes', 'HBM capacity usage in bytes', ['accelerator_id'])
-
-# 复杂统计类指标 (avg, p50, p90, p99, p99.9)
-STATS_LABELS = ['avg', 'p50', 'p90', 'p99', 'p99.9']
-GAUGE_BUFFER_LATENCY = Gauge('libtpu_buffer_transfer_latency_us', 'Buffer transfer latency stats', ['buffer_size', 'statistic'])
-GAUGE_COLLECTIVE_LATENCY = Gauge('libtpu_collective_e2e_latency_us', 'Collective End-to-End latency', ['operation', 'statistic'])
-GAUGE_GRPC_RTT = Gauge('libtpu_grpc_tcp_min_rtt_us', 'gRPC TCP minimum round trip times', ['statistic'])
-GAUGE_GRPC_RATES = Gauge('libtpu_grpc_tcp_delivery_rates_bps', 'gRPC TCP delivery rates', ['statistic'])
-
-# HLO 相关 (注意 HLO timing 的统计维度略有不同: p95 vs p99)
-HLO_STATS_LABELS = ['avg', 'p50', 'p90', 'p95', 'p99.9']
-GAUGE_HLO_TIMING = Gauge('libtpu_hlo_exec_timing_us', 'HLO execution timing distribution', ['core', 'statistic'])
-GAUGE_HLO_QUEUE = Gauge('libtpu_hlo_queue_size', 'HLO execution queue size', ['core'])
-
-def clean_split(s):
-    """去除引号并分割逗号分隔的字符串"""
-    return [x.strip().replace("'", "").replace('"', '') for x in s.split(',')]
-
-def update_metric_logic(metric_name, raw_data):
-    """根据指标名称解析原始数据并更新 Prometheus Gauge"""
-    
-    if not raw_data:
-        return
-
+def main():
     try:
-        # --- Type 1: 按加速器 ID 的简单数组 ---
-        if metric_name == 'tensorcore_util':
-            for i, val in enumerate(raw_data):
-                GAUGE_TC_UTIL.labels(accelerator_id=str(i)).set(float(val))
-                
-        elif metric_name == 'duty_cycle_pct':
-            for i, val in enumerate(raw_data):
-                GAUGE_DUTY_CYCLE.labels(accelerator_id=str(i)).set(float(val))
+        jax.distributed.initialize()
+    except:
+        pass
 
-        elif metric_name == 'hbm_capacity_total':
-            for i, val in enumerate(raw_data):
-                GAUGE_HBM_TOTAL.labels(accelerator_id=str(i)).set(float(val))
-                
-        elif metric_name == 'hbm_capacity_usage':
-            for i, val in enumerate(raw_data):
-                GAUGE_HBM_USAGE.labels(accelerator_id=str(i)).set(float(val))
+    process_id = jax.process_index()
+    devices = jax.devices()
+    num_devices = len(devices)
 
-        # --- Type 2: 包含 Label 的复杂统计字符串 ---
-        elif metric_name == 'buffer_transfer_latency':
-            # e.g. "'8MB+', '2233.25', ..."
-            for entry in raw_data:
-                parts = clean_split(entry)
-                label_val = parts[0]
-                values = parts[1:]
-                for stat, val in zip(STATS_LABELS, values):
-                    GAUGE_BUFFER_LATENCY.labels(buffer_size=label_val, statistic=stat).set(float(val))
+    # 定义切分策略 (Mesh)
+    mesh = Mesh(mesh_utils.create_device_mesh((num_devices,)), ('data',))
+    data_sharding = NamedSharding(mesh, PartitionSpec('data'))
 
-        elif metric_name == 'collective_e2e_latency':
-            # e.g. "8MB+-ALL_REDUCE, 1000, ..."
-            for entry in raw_data:
-                parts = clean_split(entry)
-                op_label = parts[0]
-                values = parts[1:]
-                for stat, val in zip(STATS_LABELS, values):
-                    GAUGE_COLLECTIVE_LATENCY.labels(operation=op_label, statistic=stat).set(float(val))
-
-        # --- Type 3: HLO 相关 ---
-        elif metric_name == 'hlo_exec_timing':
-            # e.g. "'tensorcore-0', '10.00'..."
-            for entry in raw_data:
-                parts = clean_split(entry)
-                core_label = parts[0]
-                values = parts[1:]
-                for stat, val in zip(HLO_STATS_LABELS, values):
-                    GAUGE_HLO_TIMING.labels(core=core_label, statistic=stat).set(float(val))
-        
-        elif metric_name == 'hlo_queue_size':
-            # e.g. "tensorcore-0: 1"
-            for entry in raw_data:
-                parts = entry.split(':')
-                core = parts[0].strip().replace('"', '')
-                val = parts[1].strip()
-                GAUGE_HLO_QUEUE.labels(core=core).set(float(val))
-
-        # --- Type 4: 纯分布统计 (gRPC) ---
-        elif metric_name == 'grpc_tcp_min_round_trip_times':
-            for entry in raw_data:
-                values = clean_split(entry)
-                for stat, val in zip(STATS_LABELS, values):
-                    GAUGE_GRPC_RTT.labels(statistic=stat).set(float(val))
-
-        elif metric_name == 'grpc_tcp_delivery_rates':
-            for entry in raw_data:
-                values = clean_split(entry)
-                for stat, val in zip(STATS_LABELS, values):
-                    GAUGE_GRPC_RATES.labels(statistic=stat).set(float(val))
-
-    except Exception as e:
-        print(f"Error parsing {metric_name}: {e}")
-
-
-def collect_tpu_metrics():  
-    start_http_server(8000)
-    print("Prometheus metrics server started on port 8000")
-
-    SUPPORTED_METRICS = tpumonitoring.list_supported_metrics()
+    # --- 调整维度以适配内存 ---
+    dim = 4096  # 减小维度，防止 OOM
     
-    while True:
-        for metric_name in SUPPORTED_METRICS:
-            metric_data = tpumonitoring.get_metric(metric_name)
-            update_metric_logic(metric_name, metric_data)
-        time.sleep(1)
+    def loss_fn(params, x, y):
+        # 通过在同一个参数上重复计算来人为增加 MXU 负载，而不增加内存占用
+        h = x
+        for _ in range(200): # 循环 50 次矩阵乘法
+            h = jax.nn.relu(jnp.dot(h, params))
+        preds = jnp.mean(h, axis=1)
+        return jnp.mean((preds - y)**2)
+
+    @jax.jit
+    def train_step(params, opt_state, x, y):
+        grads = jax.grad(loss_fn)(params, x, y)
+        updates, new_opt_state = optimizer.update(grads, opt_state, params)
+        new_params = optax.apply_updates(params, updates)
+        return new_params, new_opt_state
+
+    # 只需要一个大矩阵，节省内存
+    key = jax.random.PRNGKey(42)
+    params = jax.random.normal(key, (dim, dim))
+    
+    optimizer = optax.adam(learning_rate=1e-4)
+    opt_state = optimizer.init(params)
+
+    if process_id == 0:
+        print(f"🚀 优化版全芯片测试：{num_devices} 核心并行...")
+
+    for step in range(100):
+        step_key = jax.random.PRNGKey(step)
+        # 增大 Batch Size (8192) 增加并行度
+        raw_x = jax.random.normal(step_key, (8192, dim))
+        raw_y = jax.random.normal(step_key, (8192,))
+        
+        # 切分数据到所有芯片
+        data_x = jax.device_put(raw_x, data_sharding)
+        data_y = jax.device_put(raw_y, data_sharding)
+
+        start_time = time.time()
+        params, opt_state = train_step(params, opt_state, data_x, data_y)
+        jax.block_until_ready(params) # 强制等待 TPU 计算完成
+        
+        if process_id == 0 and (step + 1) % 5 == 0:
+            dt = time.time() - start_time
+            duty = tpumonitoring.get_metric("duty_cycle_pct").data()
+            hbm = tpumonitoring.get_metric("hbm_capacity_usage").data()
+            hbm_gb = [f"{float(v) / (1024**3):.2f}GB" for v in hbm]
+            
+            print(f"Step {step+1} | 耗时: {dt:.4f}s")
+            print(f"  利用率: {duty}")
+            print(f"  HBM: {hbm_gb}")
 
 if __name__ == "__main__":
-    collect_tpu_metrics()
+    main()

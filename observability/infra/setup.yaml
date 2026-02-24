@@ -1,0 +1,14 @@
+num_nodes: 2
+
+resources:
+  cloud: kubernetes
+
+workdir: ~/workplace/tpu-infra/observability
+
+setup: |
+  conda init bash
+  conda create -n pretrain -c conda-forge python=3.12 -y
+  conda activate pretrain
+  cd ~/sky_workdir
+
+  pip install jax[tpu]
