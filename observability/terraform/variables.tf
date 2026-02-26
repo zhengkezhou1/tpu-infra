@@ -25,7 +25,7 @@ variable "node_locations" {
 variable "metrics_exporter_image" {
   description = "Docker image for the TPU metrics exporter"
   type        = string
-  default     = "ghcr.io/zhengkezhou1/tpu-infra/metrics-exporter:sha-f196774"
+  default     = "ghcr.io/zhengkezhou1/tpu-infra/metrics-exporter:sha-f994b3d"
 }
 
 variable "grafana_admin_password" {
