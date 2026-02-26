@@ -4,6 +4,8 @@ kubernetes:
       labels:
         app: tpu-metrics-exporter
     spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - key: "google.com/tpu"
           operator: "Exists"

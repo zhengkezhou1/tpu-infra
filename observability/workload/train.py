@@ -8,16 +8,19 @@ from jax.experimental import mesh_utils
 def main():
     try:
         jax.distributed.initialize()
-    except:
-        pass
+    except Exception as e:
+        print(f"Warning: jax.distributed.initialize() failed: {e}")
+        import traceback
+        traceback.print_exc()
 
-    process_id = jax.process_index()
     devices = jax.devices()
     num_devices = len(devices)
 
-    # 定义切分策略 (Mesh)
-    mesh = Mesh(mesh_utils.create_device_mesh((num_devices,)), ('data',))
-    data_sharding = NamedSharding(mesh, PartitionSpec('data'))
+    # 定义 2D 切分策略 (2x4 拓扑)
+    device_mesh = mesh_utils.create_device_mesh((2, 4))
+    mesh = Mesh(device_mesh, ('data', 'model'))
+    data_sharding_2d = NamedSharding(mesh, PartitionSpec('data', None))
+    data_sharding_1d = NamedSharding(mesh, PartitionSpec('data'))
 
     # --- 调整维度以适配内存 ---
     dim = 4096  # 减小维度，防止 OOM
@@ -44,25 +47,24 @@ def main():
     optimizer = optax.adam(learning_rate=1e-4)
     opt_state = optimizer.init(params)
 
-    if process_id == 0:
-        print(f"🚀 启动 JAX 训练负载：{num_devices} 核心并行...")
+    print(f"🚀 启动 JAX 训练负载：{num_devices} 核心并行...")
 
-    for step in range(1000): # 增加步数，使其运行更久以便观察 metrics
+    for step in range(500):
         step_key = jax.random.PRNGKey(step)
         # 增大 Batch Size (8192) 增加并行度
         raw_x = jax.random.normal(step_key, (8192, dim))
         raw_y = jax.random.normal(step_key, (8192,))
         
         # 切分数据到所有芯片
-        data_x = jax.device_put(raw_x, data_sharding)
-        data_y = jax.device_put(raw_y, data_sharding)
+        data_x = jax.device_put(raw_x, data_sharding_2d)
+        data_y = jax.device_put(raw_y, data_sharding_1d)
 
         start_time = time.time()
         params, opt_state = train_step(params, opt_state, data_x, data_y)
-        jax.block_until_ready(params) # 强制等待 TPU 计算完成
+        jax.block_until_ready(params)
         dt = time.time() - start_time
         
-        if process_id == 0 and (step + 1) % 5 == 0:
+        if (step + 1) % 5 == 0:
             print(f"Step {step+1} | 耗时: {dt:.4f}s")
 
 if __name__ == "__main__":
