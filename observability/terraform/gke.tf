@@ -63,7 +63,7 @@ resource "google_container_node_pool" "v6e_2x4_node_pool" {
   name           = "v6e-2x4-node-pool"
   location       = google_container_cluster.primary.location
   node_locations = var.node_locations
-  node_count     = 2
+  node_count     = 0
   node_config {
     machine_type = "ct6e-standard-4t"
     spot         = true

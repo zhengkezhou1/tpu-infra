@@ -4,6 +4,6 @@ COPY metric.py /app/metric.py
 
 WORKDIR /app
 
-EXPOSE 8000
+EXPOSE 9000
 
 CMD ["python", "metric.py"]

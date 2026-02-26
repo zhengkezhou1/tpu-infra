@@ -53,7 +53,7 @@ resource "kubernetes_daemon_set_v1" "tpu_metrics_exporter" {
 
           port {
             name           = "http"
-            container_port = 8000
+            container_port = 9000
             protocol       = "TCP"
           }
 

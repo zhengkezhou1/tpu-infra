@@ -16,8 +16,8 @@ STAT_LABELS = ['core_type_id', 'stat']
 HLO_EXECUTION_TIMING = Gauge('libtpu_hlo_execution_timing', 'HLO execution timing in microseconds', STAT_LABELS)
 
 def main():
-    start_http_server(8000)
-    print("TPU Metrics Server started on port 8000")
+    start_http_server(9000)
+    print("TPU Metrics Server started on port 9000")
     print("Monitoring all specified TPU metrics...")
 
     while True:
