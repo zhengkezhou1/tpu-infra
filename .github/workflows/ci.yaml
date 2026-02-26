@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       devcontainer: ${{ steps.filter.outputs.devcontainer }}
+      metrics-exporter: ${{ steps.filter.outputs.metrics-exporter }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -26,6 +27,9 @@ jobs:
           filters: |
             devcontainer:
               - 'devcontainer/**'
+            metrics-exporter:
+              - 'observability/workload/metric.py'
+              - 'observability/workload/Dockerfile'
 
   build-devcontainer:
     needs: detect-changes
@@ -83,4 +87,62 @@ jobs:
 
           git add config/templates/dev-container-tpu/deployment.yaml
           git commit -m "chore(ci): update tpu dev-container image tag to ${NEW_TAG}" || echo "No changes to commit"
+          git push
+
+  build-metrics-exporter:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.metrics-exporter == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/metrics-exporter
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./observability/workload
+          file: ./observability/workload/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Update metrics_exporter_image in Terraform variables
+        if: github.event_name != 'pull_request'
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          NEW_TAG="sha-${SHORT_SHA}"
+          NEW_IMAGE="ghcr.io/${{ github.repository }}/metrics-exporter:${NEW_TAG}"
+
+          echo "Updating Terraform default image tag to: ${NEW_IMAGE}"
+
+          git pull --rebase origin main
+
+          sed -i "s|default\s*=\s*\"ghcr.io/.*metrics-exporter:.*\"|default     = \"${NEW_IMAGE}\"|" \
+            observability/terraform/variables.tf
+
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+          git add observability/terraform/variables.tf
+          git commit -m "chore(ci): update metrics-exporter image tag to ${NEW_TAG}" || echo "No changes to commit"
           git push

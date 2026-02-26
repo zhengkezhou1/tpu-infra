@@ -11,8 +11,8 @@ resource "kubernetes_manifest" "tpu_metrics_pod_monitoring" {
         matchLabels:
           app: tpu-metrics-exporter
       endpoints:
-      - port: "http" # Corresponds to the port named 'http' in config.yaml
-        path: /
+      - port: "http"
+        path: /metrics
         interval: 30s
   EOT
   )

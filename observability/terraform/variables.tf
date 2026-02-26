@@ -22,6 +22,12 @@ variable "node_locations" {
   default     = ["asia-northeast1-b"]
 }
 
+variable "metrics_exporter_image" {
+  description = "Docker image for the TPU metrics exporter"
+  type        = string
+  default     = "ghcr.io/zhengkezhou1/tpu-infra/metrics-exporter:latest"
+}
+
 variable "grafana_admin_password" {
   description = "Grafana admin password"
   type        = string
