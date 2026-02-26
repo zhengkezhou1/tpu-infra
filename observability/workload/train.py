@@ -13,6 +13,7 @@ def main():
         import traceback
         traceback.print_exc()
 
+    jax.profiler.start_trace("/tmp/jax_trace")
     devices = jax.devices()
     num_devices = len(devices)
 
@@ -26,9 +27,8 @@ def main():
     dim = 4096  # 减小维度，防止 OOM
     
     def loss_fn(params, x, y):
-        # 通过在同一个参数上重复计算来人为增加 MXU 负载，而不增加内存占用
         h = x
-        for _ in range(200): # 循环 200 次矩阵乘法
+        for _ in range(200):
             h = jax.nn.relu(jnp.dot(h, params))
         preds = jnp.mean(h, axis=1)
         return jnp.mean((preds - y)**2)
@@ -40,14 +40,13 @@ def main():
         new_params = optax.apply_updates(params, updates)
         return new_params, new_opt_state
 
-    # 只需要一个大矩阵，节省内存
     key = jax.random.PRNGKey(42)
     params = jax.random.normal(key, (dim, dim))
     
     optimizer = optax.adam(learning_rate=1e-4)
     opt_state = optimizer.init(params)
 
-    print(f"🚀 启动 JAX 训练负载：{num_devices} 核心并行...")
+    print(f"启动 JAX 训练负载：{num_devices} 核心并行...")
 
     for step in range(500):
         step_key = jax.random.PRNGKey(step)
@@ -66,6 +65,9 @@ def main():
         
         if (step + 1) % 5 == 0:
             print(f"Step {step+1} | 耗时: {dt:.4f}s")
+
+    jax.profiler.stop_trace()
+    print("Trace saved to /tmp/jax_trace")
 
 if __name__ == "__main__":
     main()
