@@ -4,8 +4,6 @@ kubernetes:
       labels:
         app: tpu-training
     spec:
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       tolerations:
         - key: "google.com/tpu"
           operator: "Exists"
@@ -18,7 +16,7 @@ kubernetes:
           emptyDir: {}
       initContainers:
         - name: metrics-exporter
-          image: ghcr.io/zhengkezhou1/tpu-infra/metrics-exporter:v0.3
+          image: ghcr.io/zhengkezhou1/tpu-infra/metrics-exporter:v0.4
           restartPolicy: Always
           ports:
             - name: http
