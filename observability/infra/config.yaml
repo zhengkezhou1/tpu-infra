@@ -2,7 +2,7 @@ kubernetes:
   pod_config:
     metadata:
       labels:
-        app: tpu-metrics-exporter
+        app: tpu-training
     spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
@@ -13,6 +13,26 @@ kubernetes:
       nodeSelector:
         cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
         cloud.google.com/gke-tpu-topology: 2x4
+      volumes:
+        - name: tpu-env
+          emptyDir: {}
+      initContainers:
+        - name: metrics-exporter
+          image: ghcr.io/zhengkezhou1/tpu-infra/metrics-exporter:v0.3
+          restartPolicy: Always
+          ports:
+            - name: http
+              containerPort: 9000
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: tpu-env
+              mountPath: /env
       containers:
         - name: ray-node
           image: us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu@sha256:33fd74d1ac4a45de18855cfec6c41644bf59d5b4e76a343d32f52b6553f0e804
@@ -28,6 +48,9 @@ kubernetes:
           ports:
             - name: ssh
               containerPort: 22
+          volumeMounts:
+            - name: tpu-env
+              mountPath: /env
           lifecycle:
             postStart:
               exec:
@@ -56,3 +79,8 @@ kubernetes:
                       echo '# Auto-load TPU environment variables' >> /root/.bashrc
                       echo 'source /etc/profile.d/tpu-env.sh' >> /root/.bashrc
                     fi
+
+                    # 将 device plugin 注入的 TPU 拓扑变量写入共享卷，供 metrics-exporter 读取
+                    for var in TPU_CHIPS_PER_HOST_BOUNDS TPU_HOST_BOUNDS TPU_TOPOLOGY_ALT TPU_TOPOLOGY_WRAP TPU_RUNTIME_METRICS_PORTS TPU_SKIP_MDS_QUERY; do
+                      echo "${!var}" > /env/${var}
+                    done

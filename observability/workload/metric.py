@@ -1,8 +1,38 @@
+import os
 import time
 from libtpu.sdk import tpumonitoring
 from prometheus_client import start_http_server, Gauge
 from prometheus_client.core import REGISTRY, GaugeMetricFamily, HistogramMetricFamily
 import traceback
+
+def load_env_from_dir(env_dir="/env"):
+    """从 /env 目录读取环境变量，每个文件名为变量名，内容为变量值"""
+    if not os.path.isdir(env_dir):
+        return
+    for name in os.listdir(env_dir):
+        path = os.path.join(env_dir, name)
+        if os.path.isfile(path):
+            with open(path) as f:
+                value = f.read().strip()
+            os.environ.setdefault(name, value)
+            print(f"Loaded env from {path}: {name}={value}")
+
+load_env_from_dir()
+
+def wait_for_tpu_env(env_dir="/env", timeout=120):
+    """等待 ray-node postStart 写入 TPU 拓扑变量"""
+    required = ["TPU_CHIPS_PER_HOST_BOUNDS", "TPU_HOST_BOUNDS"]
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        load_env_from_dir(env_dir)
+        if all(os.environ.get(k) for k in required):
+            print("TPU env vars ready.")
+            return
+        print("Waiting for TPU env vars from /env/ ...")
+        time.sleep(5)
+    raise RuntimeError(f"Timed out waiting for TPU env vars: {required}")
+
+wait_for_tpu_env()
 
 CHIP_LABELS = ['chip']
 CORE_TYPE_ID_LABELS = ['core_type_id']

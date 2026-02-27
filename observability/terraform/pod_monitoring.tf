@@ -9,7 +9,7 @@ resource "kubernetes_manifest" "tpu_metrics_pod_monitoring" {
     spec:
       selector:
         matchLabels:
-          app: tpu-metrics-exporter
+          app: tpu-training
       endpoints:
       - port: "http"
         path: /metrics

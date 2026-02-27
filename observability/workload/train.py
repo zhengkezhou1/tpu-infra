@@ -6,12 +6,16 @@ from jax.sharding import Mesh, PartitionSpec, NamedSharding
 from jax.experimental import mesh_utils
 
 def main():
-    try:
-        jax.distributed.initialize()
-    except Exception as e:
-        print(f"Warning: jax.distributed.initialize() failed: {e}")
-        import traceback
-        traceback.print_exc()
+    import os
+    coordinator_address = os.environ.get("JAX_COORDINATOR_ADDRESS")
+    num_processes = int(os.environ.get("JAX_PROCESS_COUNT", 1))
+    process_id = int(os.environ.get("JAX_PROCESS_ID", 0))
+    print(f"Initializing JAX distributed: coordinator={coordinator_address}, num_processes={num_processes}, process_id={process_id}")
+    jax.distributed.initialize(
+        coordinator_address=coordinator_address,
+        num_processes=num_processes,
+        process_id=process_id,
+    )
 
     jax.profiler.start_trace("/tmp/jax_trace")
     devices = jax.devices()
