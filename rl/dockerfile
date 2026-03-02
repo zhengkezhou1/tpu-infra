@@ -1,0 +1,7 @@
+FROM us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu@sha256:d3dbf1a00bf1c5b61bbd1d7456cca3ec090fd3200536a4b61a8fbd3de8ef23f3
+
+RUN git clone https://github.com/sgl-project/sglang-jax /sglang-jax
+
+WORKDIR /sglang-jax
+
+RUN uv pip install --python /opt/venv/bin/python -e 'python[all]'
